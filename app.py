@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import torch
 import torch.nn as nn
@@ -9,7 +9,6 @@ import numpy as np
 import io
 import gc
 
-# Limit PyTorch threads to save RAM on Render Free Tier
 torch.set_num_threads(1)
 
 # 1. Define the PointNet Architecture
@@ -45,7 +44,6 @@ model.eval()
 # 3. FastAPI Setup
 app = FastAPI()
 
-# CORS Middleware (Allows your Vercel frontend to talk to your Render backend)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -56,7 +54,74 @@ app.add_middleware(
 
 @app.get("/")
 async def home():
-    return {"status": "Aerodynamic AI Backend is Live!", "model_loaded": True}
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>AI Aerodynamic Drag Predictor</title>
+        <style>
+            body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; background-color: #f4f7f6; }
+            .card { border: 1px solid #ccc; padding: 30px; display: inline-block; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); background: white; }
+            button { background-color: #007BFF; color: white; padding: 12px 24px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+            button:hover { background-color: #0056b3; }
+            h2 { color: #333; }
+            .feedback { margin-top: 15px; color: #555; font-size: 14px; max-width: 400px; margin-left: auto; margin-right: auto; border-top: 1px solid #eee; padding-top: 15px; }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h2>Artificial Intelligence Drag Prediction</h2>
+            <p>Upload a 3D Vehicle Stereolithography File</p>
+            <input type="file" id="fileInput" accept=".stl">
+            <br><br>
+            <button onclick="uploadFile()">Predict Drag Coefficient</button>
+            <br><br>
+            <h3 id="result" style="color: green;"></h3>
+            <div id="feedback" class="feedback"></div>
+        </div>
+
+        <script>
+            async function uploadFile() {
+                const fileInput = document.getElementById('fileInput');
+                const resultDiv = document.getElementById('result');
+                const feedbackDiv = document.getElementById('feedback');
+                
+                if (!fileInput.files[0]) {
+                    alert("Please select an STL file first.");
+                    return;
+                }
+
+                resultDiv.innerText = "Processing geometry and predicting...";
+                feedbackDiv.innerText = "";
+
+                const formData = new FormData();
+                formData.append("file", fileInput.files[0]);
+
+                try {
+                    const response = await fetch('/predict', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                        resultDiv.innerText = "Server Error: " + data.error;
+                        resultDiv.style.color = 'red';
+                    } else {
+                        resultDiv.innerText = "Predicted Cd: " + data.predicted_cd.toFixed(4);
+                        resultDiv.style.color = 'green';
+                        feedbackDiv.innerText = data.engineering_feedback;
+                    }
+                } catch (error) {
+                    resultDiv.innerText = "Error processing file.";
+                    console.error(error);
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 
 @app.post("/predict")
 async def predict_drag(file: UploadFile = File(...)):
@@ -64,7 +129,6 @@ async def predict_drag(file: UploadFile = File(...)):
         contents = await file.read()
         file_obj = io.BytesIO(contents)
         
-        # force='mesh' combines multi-part STLs into one surface
         mesh = trimesh.load(file_obj, file_type='stl', force='mesh')
         
         if len(mesh.vertices) == 0:
@@ -83,7 +147,6 @@ async def predict_drag(file: UploadFile = File(...)):
         with torch.no_grad():
             prediction = model(point_cloud).item()
             
-        # FREE RAM: Delete heavy variables to prevent Render Free Tier crash
         del mesh, points, point_cloud
         gc.collect()
         
@@ -100,7 +163,6 @@ async def predict_drag(file: UploadFile = File(...)):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# 4. Cloud Deployment Startup Block
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
