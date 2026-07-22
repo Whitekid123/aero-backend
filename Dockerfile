@@ -1,21 +1,20 @@
-# Use an official, lightweight Python 3.11 image
 FROM python:3.11-slim
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Copy the requirements file first
-COPY requirements.txt .
+# Install CPU-only PyTorch explicitly
+RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
 
-# Install dependencies
+# Install the rest of the requirements
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code (app.py and the .pth model)
+# Copy the app code and the trained model
 COPY . .
 
-# Tell Render what port to use
+# Expose the port
 ENV PORT 8000
 EXPOSE 8000
 
-# Run the application
+# Run the app
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
