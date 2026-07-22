@@ -64,6 +64,7 @@ async def predict_drag(file: UploadFile = File(...)):
         contents = await file.read()
         file_obj = io.BytesIO(contents)
         
+        # force='mesh' combines multi-part STLs into one surface
         mesh = trimesh.load(file_obj, file_type='stl', force='mesh')
         
         if len(mesh.vertices) == 0:
