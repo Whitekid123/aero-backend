@@ -109,7 +109,7 @@ async def predict_drag(file: UploadFile = File(...)):
     contents = await file.read()
     file_obj = io.BytesIO(contents)
     
-    mesh = trimesh.load(file_obj, file_type='stl')
+    mesh = trimesh.load(file_obj, file_type='stl', force='mesh')
     points = mesh.sample(1024)
     
     centroid = np.mean(points, axis=0)
