@@ -91,8 +91,16 @@ async def home():
                         body: formData
                     });
                     const data = await response.json();
-                    resultDiv.innerText = "Predicted Cd: " + data.predicted_cd.toFixed(4);
-                    feedbackDiv.innerText = data.engineering_feedback;
+                    
+                    // Error handling to show exact server error on screen
+                    if (data.error) {
+                        resultDiv.innerText = "Server Error: " + data.error;
+                        resultDiv.style.color = 'red';
+                    } else {
+                        resultDiv.innerText = "Predicted Cd: " + data.predicted_cd.toFixed(4);
+                        resultDiv.style.color = 'green';
+                        feedbackDiv.innerText = data.engineering_feedback;
+                    }
                 } catch (error) {
                     resultDiv.innerText = "Error processing file.";
                     console.error(error);
@@ -106,32 +114,42 @@ async def home():
 
 @app.post("/predict")
 async def predict_drag(file: UploadFile = File(...)):
-    contents = await file.read()
-    file_obj = io.BytesIO(contents)
-    
-    mesh = trimesh.load(file_obj, file_type='stl', force='mesh')
-    points = mesh.sample(1024)
-    
-    centroid = np.mean(points, axis=0)
-    points = points - centroid
-    max_dist = np.max(np.linalg.norm(points, axis=1))
-    if max_dist == 0: max_dist = 1
-    points = points / max_dist
-    
-    point_cloud = torch.tensor(points, dtype=torch.float32).unsqueeze(0).transpose(1, 2)
-    
-    with torch.no_grad():
-        prediction = model(point_cloud).item()
+    try:
+        contents = await file.read()
+        file_obj = io.BytesIO(contents)
         
-    if prediction > 0.35:
-        feedback = "Engineering Insight: The geometry exhibits high aerodynamic resistance. It is recommended to evaluate the underbody topology and rear taper to reduce turbulent wake formation."
-    else:
-        feedback = "Engineering Insight: The geometry demonstrates optimal aerodynamic efficiency. The current macroscopic topology is suitable for preliminary design screening."
-    
-    return {
-        "predicted_cd": prediction,
-        "engineering_feedback": feedback
-    }
+        # force='mesh' combines multi-part STLs into one surface
+        mesh = trimesh.load(file_obj, file_type='stl', force='mesh')
+        
+        if len(mesh.vertices) == 0:
+            return {"error": "The uploaded STL file contains no vertices."}
+            
+        points = mesh.sample(1024)
+        
+        centroid = np.mean(points, axis=0)
+        points = points - centroid
+        max_dist = np.max(np.linalg.norm(points, axis=1))
+        if max_dist == 0: max_dist = 1
+        points = points / max_dist
+        
+        point_cloud = torch.tensor(points, dtype=torch.float32).unsqueeze(0).transpose(1, 2)
+        
+        with torch.no_grad():
+            prediction = model(point_cloud).item()
+            
+        if prediction > 0.35:
+            feedback = "Engineering Insight: The geometry exhibits high aerodynamic resistance. It is recommended to evaluate the underbody topology and rear taper to reduce turbulent wake formation."
+        else:
+            feedback = "Engineering Insight: The geometry demonstrates optimal aerodynamic efficiency. The current macroscopic topology is suitable for preliminary design screening."
+        
+        return {
+            "predicted_cd": prediction,
+            "engineering_feedback": feedback
+        }
+        
+    except Exception as e:
+        # This sends the exact Python error to your website so we can see it
+        return {"error": str(e)}
 
 # 4. Cloud Deployment Startup Block
 if __name__ == "__main__":
